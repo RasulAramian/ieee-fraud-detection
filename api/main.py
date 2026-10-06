@@ -24,12 +24,30 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing FastAPI service & loading model artifacts...")
 
     model_path = "models/lgb_model.txt"
-    artifacts_dir = "data/processed"
+    stats_path = "data/processed/global_stats.json"
 
-    if not os.path.exists(model_path):
-        logger.warning(
-            f"Model file not found at {model_path}. API will run in fallback state."
-        )
+    try:
+        # Load LightGBM model
+        if os.path.exists(model_path):
+            model_container["model"] = lgb.Booster(model_file=model_path)
+            logger.info("LightGBM model loaded successfully.")
+        else:
+            logger.warning(f"Model file not found at {model_path}.")
+
+        # Initialize and load FeatureTransformer stats if available
+        transformer = FeatureTransformer()
+        if os.path.exists(stats_path):
+            with open(stats_path, "r") as f:
+                transformer.global_stats = json.load(f)
+            logger.info("Feature transformer stats loaded successfully.")
+        else:
+            logger.warning(f"Global stats file not found at {stats_path}. Running with base transformer.")
+            
+        model_container["transformer"] = transformer
+
+    except Exception as e:
+        logger.error(f"Failed to load model artifacts during startup: {str(e)}")
+
     yield
     model_container.clear()
     logger.info("FastAPI service shutdown complete.")
@@ -47,7 +65,7 @@ app = FastAPI(
 @app.get("/health")
 async def health_check():
     """Health check endpoint to verify service and model status."""
-    model_loaded = "model" in model_container
+    model_loaded = "model" in model_container and "transformer" in model_container
     return {
         "status": "healthy",
         "model_loaded": model_loaded,
