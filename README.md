@@ -40,39 +40,78 @@ ieee-fraud-detection/
 ├── requirements-dev.txt   # Development dependencies
 └── README.md              # Project documentation
 ```
+
+## 📊 Model Performance & Results
+
+The out-of-core training pipeline was evaluated on the IEEE-CIS competition splits, achieving competitive performance against standard full-memory approaches while maintaining a strict memory footprint.
+
+### Leaderboard & Validation Summary
+| Pipeline Iteration | Public AUC | Private AUC | Key Highlights |
+| :--- | :---: | :---: | :--- |
+| **Initial LightGBM Baseline** | 0.9080 | 0.8853 | Basic feature encoding |
+| **Feature-Engineered Baseline** | 0.9116 | 0.8889 | Added frequency encodings & time features |
+| **Out-of-Core Incremental Baseline** | **0.9144** | **0.8906** | 2-Pass Chunked LGBM + Full Feature Alignment |
+
+- **Validation Strategy**: Strict time-aware hold-out split achieving **0.9003 ROC-AUC** (Optimal Decision Threshold: **0.3505**).
+
+## 📂 Dataset Setup
+
+To run the pipeline locally, download the IEEE-CIS Fraud Detection dataset from Kaggle and place the raw CSV files into the `data/raw/` directory with the following structure:
+
+```text
+data/
+└── raw/
+    ├── train_transaction.csv
+    ├── train_identity.csv
+    ├── test_transaction.csv
+    └── test_identity.csv
+```
+
 ## 🛠 Installation & Setup
 
 ### 1. Clone the Repository
-git clone https://github.com/rasularamian/ieee-fraud-detection.git
+```bash
+git clone https://github.com/RasulAramian/ieee-fraud-detection.git
 cd ieee-fraud-detection
+```
 
 ### 2. Create and Activate Virtual Environment
+```bash
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
 
 ### 3. Install Dependencies
+```bash
 pip install -r requirements.txt
+```
 
 ## 🧪 Running Tests
 
 To verify the integrity of the feature engineering logic and API routing, run pytest:
+```bash
 pytest tests/
+```
 
 ## 🐳 Docker Deployment
 
 ### Build the Docker Image
+```bash
 docker build -t ieee-fraud-detection:v1 .
+```
 
 ### Run the Container
+```bash
 docker run -d --name fraud_app -p 8000:8000 ieee-fraud-detection:v1
+```
 
 Once running, access the interactive API documentation (Swagger UI) at:
-http://localhost:8000/docs
+`http://localhost:8000/docs`
 
 ## 🔒 Compliance & Security
 
-- **Data Privacy**: Raw data files (data/raw/) are strictly excluded via .dockerignore to prevent unauthorized inclusion in build artifacts.
-- **Metadata Preservation**: Only necessary schema JSONs (data/processed/*.json) are packaged for live inference.
+- **Data Privacy**: Raw data files (`data/raw/`) are strictly excluded via `.dockerignore` to prevent unauthorized inclusion in build artifacts.
+- **Metadata Preservation**: Only necessary schema JSONs (`data/processed/*.json`) are packaged for live inference.
 
 ## 👨‍💻 Author
 **Rasul Aramian**
