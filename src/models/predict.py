@@ -1,64 +1,52 @@
-import os
-from typing import Dict
-import lightgbm as lgb
+import logging
+from pathlib import Path
 import pandas as pd
+import lightgbm as lgb
 from src.data.loader import ChunkedDataLoader
 from src.features.features import FeatureTransformer
-from src.utils.logger import get_logger
 
-logger = get_logger("predict_model")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
+def run_batch_inference(
+    data_dir: str = "data/raw",
+    model_path: str = "models/lgb_model.txt",
+    output_path: str = "data/predictions.csv",
+    split: str = "test",
+    chunk_size: int = 50000
+):
+    """Run batch inference on chunked data using the trained LightGBM model."""
+    logger.info("Initializing data loader and feature transformer...")
+    loader = ChunkedDataLoader(data_dir=data_dir, chunk_size=chunk_size)
+    transformer = FeatureTransformer()
+    transformer.load_artifacts("data/processed")
 
-class BatchInferenceEngine:
-    """Generates predictions for test datasets in streaming chunks using trained LightGBM models."""
+    logger.info(f"Loading model from {model_path}...")
+    model = lgb.Booster(model_file=model_path)
 
-    def __init__(
-        self,
-        model_path: str = "models/lgb_model.txt",
-        artifacts_dir: str = "data/processed",
-    ) -> None:
-        self.model_path = model_path
-        self.artifacts_dir = artifacts_dir
-        self.booster = lgb.Booster(model_file=self.model_path)
-        self.model_features = self.booster.feature_name()
+    predictions = []
+    
+    logger.info(f"Starting chunked inference stream for split: {split}...")
+    for chunk in loader.stream_transactions(split=split):
+        processed_chunk = transformer.transform(chunk)
+        preds = model.predict(processed_chunk)
+        
+        if "TransactionID" in chunk.columns:
+            res_df = pd.DataFrame({
+                "TransactionID": chunk["TransactionID"],
+                "fraud_probability": preds
+            })
+        else:
+            res_df = pd.DataFrame({
+                "fraud_probability": preds
+            })
+            
+        predictions.append(res_df)
 
-    def generate_predictions(
-        self,
-        transformer: FeatureTransformer,
-        data_dir: str = "data/raw",
-        chunk_size: int = 100000,
-        output_filename: str = "submission_out_of_core_baseline.csv",
-    ) -> pd.DataFrame:
-        """Streams test transactions, applies transformations, and collects predictions."""
-        loader = ChunkedDataLoader(data_dir=data_dir, chunk_size=chunk_size)
-        submission_list = []
+    final_preds = pd.concat(predictions, ignore_index=True)
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    final_preds.to_csv(output_path, index=False)
+    logger.info(f"Batch inference complete. Saved {len(final_preds)} predictions to {output_path}")
 
-        logger.info(
-            "Starting Pass 3: Streaming inference on Test transactions..."
-        )
-
-        for chunk_idx, chunk in enumerate(
-            loader.stream_transactions(split="test", merge_identity=True)
-        ):
-            logger.info(f"Processing Test Chunk {chunk_idx + 1}...")
-
-            transformed_chunk = transformer.transform(chunk)
-            X_test = transformed_chunk[self.model_features]
-
-            preds = self.booster.predict(X_test)
-
-            sub_chunk = pd.DataFrame(
-                {
-                    "TransactionID": transformed_chunk["TransactionID"],
-                    "isFraud": preds,
-                }
-            )
-            submission_list.append(sub_chunk)
-
-        final_submission = pd.concat(submission_list, axis=0)
-        final_submission.to_csv(output_filename, index=False)
-        logger.info(
-            f"Successfully generated prediction file: {output_filename}"
-        )
-
-        return final_submission
+if __name__ == "__main__":
+    run_batch_inference()
