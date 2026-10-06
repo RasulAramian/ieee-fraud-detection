@@ -1,31 +1,52 @@
 from fastapi.testclient import TestClient
-import pytest
-
 from api.main import app
 
+client = TestClient(app)
 
-def test_health_endpoint():
-    """Test the API health check response."""
-    with TestClient(app) as client:
-        response = client.get("/health")
-        assert response.status_code == 200
-        assert "status" in response.json()
+def test_health_check():
+    response = client.get("/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert "status" in data
+    assert "model_loaded" in data
 
-
-def test_predict_endpoint_success():
-    """Test successful inference request and response structure."""
+def test_predict_endpoint_valid():
     payload = {
-        "TransactionID": 2987000,
         "TransactionDT": 86400,
-        "TransactionAmt": 68.5,
+        "TransactionAmt": 150.0,
+        "card1": 14290,
+        "card2": 111.0,
+        "card3": 150.0,
+        "card5": 226.0,
+        "addr1": 315.0,
+        "addr2": 87.0,
         "ProductCD": "W",
-        "card1": 13926,
+        "card4": "visa",
+        "card6": "debit",
+        "P_emaildomain": "gmail.com",
+        "R_emaildomain": "gmail.com",
+        "M1": "T",
+        "M2": "T",
+        "M3": "T",
+        "M4": "M0",
+        "M5": "T",
+        "M6": "T",
+        "M7": "T",
+        "M8": "T",
+        "M9": "T"
     }
-    with TestClient(app) as client:
-        response = client.post("/predict", json=payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert "is_fraud" in data
-        assert "fraud_probability" in data
-        assert isinstance(data["is_fraud"], bool)
-        assert isinstance(data["fraud_probability"], float)
+    
+    response = client.post("/predict", json=payload)
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert "is_fraud" in data
+    assert "fraud_probability" in data
+    
+    # Verify probability bounds
+    prob = data["fraud_probability"]
+    assert 0.0 <= prob <= 1.0
+    
+    # Verify binary prediction type
+    assert isinstance(data["is_fraud"], int)
+    assert data["is_fraud"] in [0, 1]
