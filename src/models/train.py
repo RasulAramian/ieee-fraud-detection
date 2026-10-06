@@ -1,89 +1,181 @@
 import os
+import gc
+import logging
 import pandas as pd
+import numpy as np
 import lightgbm as lgb
-from typing import Dict, Any, Optional
+from sklearn.metrics import roc_auc_score
 
-class IncrementalTrainer:
-    """Orchestrates Out-of-Core incremental training for LightGBM across memory-bounded data chunks."""
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
-    def __init__(
-        self,
-        model_dir: str = "models",
-        params: Optional[Dict[str, Any]] = None,
-        val_chunk_idx: int = 5,
-    ) -> None:
-        self.model_dir = model_dir
-        self.val_chunk_idx = val_chunk_idx
-        os.makedirs(self.model_dir, exist_ok=True)
+def reduce_mem_usage(df):
+    for col in df.columns:
+        if pd.api.types.is_numeric_dtype(df[col]):
+            c_min = df[col].min()
+            c_max = df[col].max()
+            if pd.api.types.is_integer_dtype(df[col]):
+                if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
+                    df[col] = df[col].astype(np.int8)
+                elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
+                    df[col] = df[col].astype(np.int16)
+                elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
+                    df[col] = df[col].astype(np.int32)
+            else:
+                if c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+                    df[col] = df[col].astype(np.float32)
+    return df
 
-        self.params = params or {
-            "objective": "binary",
-            "metric": "auc",
-            "boosting_type": "gbdt",
-            "learning_rate": 0.05,
-            "num_leaves": 63,
-            "max_depth": -1,
-            "feature_fraction": 0.8,
-            "bagging_fraction": 0.8,
-            "bagging_freq": 1,
-            "verbosity": -1,
-            "n_jobs": -1,
-        }
+def run_training_pipeline(data_dir: str = "data/raw", model_dir: str = "models", chunk_size: int = 100000):
+    os.makedirs(model_dir, exist_ok=True)
+    
+    train_transaction_path = os.path.join(data_dir, "train_transaction.csv")
+    train_identity_path = os.path.join(data_dir, "train_identity.csv")
+    
+    if not os.path.exists(train_transaction_path):
+        raise FileNotFoundError(f"Missing {train_transaction_path}")
 
-    def train_pipeline(
-        self, data_dir: str = "data/raw", chunk_size: int = 100000
-    ) -> lgb.Booster:
-        """
-        Runs the training pipeline by loading chunks of train data,
-        merging transaction and identity, and training LightGBM incrementally.
-        """
-        print(f"Loading data from {data_dir} with chunk size {chunk_size}...")
-        
-        train_transaction_path = os.path.join(data_dir, "train_transaction.csv")
-        train_identity_path = os.path.join(data_dir, "train_identity.csv")
+    logger.info("Loading identity dataset...")
+    train_id = pd.read_csv(train_identity_path) if os.path.exists(train_identity_path) else pd.DataFrame()
+    if not train_id.empty:
+        train_id = reduce_mem_usage(train_id)
 
-        if not os.path.exists(train_transaction_path):
-            raise FileNotFoundError(f"Missing {train_transaction_path}")
+    logger.info("==========================================")
+    logger.info("PASS 1: Extracting Mappings & Statistics (Chunks 1 to 5 ONLY)...")
+    logger.info("==========================================")
 
-        # Read the first chunk to initialize and train a baseline model
-        print("Reading the first chunk for training...")
-        trans_chunk = pd.read_csv(train_transaction_path, nrows=chunk_size)
-        
-        if os.path.exists(train_identity_path):
-            ident_chunk = pd.read_csv(train_identity_path, nrows=chunk_size)
-            df = pd.merge(trans_chunk, ident_chunk, on="TransactionID", how="left")
+    freq_cols = ["card1", "card2", "P_emaildomain"]
+    global_freq = {col: {} for col in freq_cols}
+    card1_stats = {}
+
+    sample_trans = pd.read_csv(train_transaction_path, nrows=100)
+    non_num_trans = sample_trans.select_dtypes(include=["object", "string", "category"]).columns.tolist()
+    non_num_id = train_id.select_dtypes(include=["object", "string", "category"]).columns.tolist() if not train_id.empty else []
+    cat_cols = list(set(non_num_trans + non_num_id))
+
+    cat_uniques = {col: set() for col in cat_cols}
+    if not train_id.empty:
+        for col in cat_cols:
+            if col in train_id.columns:
+                cat_uniques[col].update(train_id[col].dropna().astype(str).unique())
+
+    for chunk_idx, chunk in enumerate(pd.read_csv(train_transaction_path, chunksize=chunk_size)):
+        if chunk_idx >= 5:
+            break
+
+        for col in freq_cols:
+            if col in chunk.columns:
+                vc = chunk[col].value_counts().to_dict()
+                for k, v in vc.items():
+                    global_freq[col][k] = global_freq[col].get(k, 0) + v
+
+        if "card1" in chunk.columns and "TransactionAmt" in chunk.columns:
+            for card_id, group in chunk.groupby("card1")["TransactionAmt"]:
+                if card_id not in card1_stats:
+                    card1_stats[card_id] = []
+                card1_stats[card_id].extend(group.tolist())
+
+        for col in cat_cols:
+            if col in chunk.columns:
+                cat_uniques[col].update(chunk[col].dropna().astype(str).unique())
+
+    card1_global_mean = {k: np.mean(v) for k, v in card1_stats.items()}
+    card1_global_std = {k: np.std(v) for k, v in card1_stats.items()}
+    del card1_stats
+
+    cat_mappings = {
+        col: {val: idx for idx, val in enumerate(sorted(list(vals)))}
+        for col, vals in cat_uniques.items()
+    }
+    del cat_uniques
+    gc.collect()
+
+    logger.info("PASS 1 Completed Successfully!")
+    logger.info("==========================================")
+    logger.info("PASS 2: Feature Engineering & Incremental LGBM Training...")
+    logger.info("==========================================")
+
+    lgb_booster = None
+    val_chunk_df = None
+
+    for chunk_idx, chunk in enumerate(pd.read_csv(train_transaction_path, chunksize=chunk_size)):
+        logger.info(f"Processing Chunk {chunk_idx + 1}...")
+
+        if not train_id.empty:
+            chunk_df = pd.merge(chunk, train_id, on="TransactionID", how="left")
         else:
-            df = trans_chunk
+            chunk_df = chunk
+            
+        chunk_df = reduce_mem_usage(chunk_df)
 
-        if "isFraud" not in df.columns:
-            raise ValueError("Target column 'isFraud' not found in training data.")
+        new_cols = {}
+        if "TransactionDT" in chunk_df.columns:
+            new_cols["hour"] = (chunk_df["TransactionDT"] // 3600) % 24
+            new_cols["day_cycle"] = (chunk_df["TransactionDT"] // (3600 * 24)) % 7
 
-        X = df.drop(columns=["TransactionID", "TransactionDT", "isFraud"], errors="ignore")
-        y = df["isFraud"]
+        if "card1" in chunk_df.columns and "TransactionAmt" in chunk_df.columns:
+            card1_mean = chunk_df["card1"].map(card1_global_mean)
+            card1_std = chunk_df["card1"].map(card1_global_std)
+            new_cols["TransactionAmt_zscore_card1"] = (chunk_df["TransactionAmt"] - card1_mean) / (card1_std + 1e-5)
+            new_cols["TransactionAmt_to_mean_card1"] = chunk_df["TransactionAmt"] / (card1_mean + 1e-5)
+            new_cols["TransactionAmt_diff_mean_card1"] = chunk_df["TransactionAmt"] - card1_mean
 
-        # Convert categorical/object columns to numeric codes to avoid strict metadata mismatch during inference
-        for col in X.select_dtypes(include=["object", "category", "string"]).columns:
-            X[col] = pd.factorize(X[col].astype(str))[0]
+        for col in freq_cols:
+            if col in chunk_df.columns:
+                new_cols[f"{col}_fq_enc"] = chunk_df[col].map(pd.Series(global_freq[col])).fillna(0)
 
-        print("Training initial LightGBM model on the first chunk...")
-        train_data = lgb.Dataset(X, label=y)
-        
-        model = lgb.train(
-            self.params,
-            train_data,
-            num_boost_round=100
-        )
+        chunk_df = chunk_df.assign(**new_cols)
 
-        model_path = os.path.join(self.model_dir, "lgb_model.txt")
-        model.save_model(model_path)
-        print(f"Model successfully saved to {model_path}")
-        return model
+        for col, mapping in cat_mappings.items():
+            if col in chunk_df.columns:
+                chunk_df[col] = chunk_df[col].astype(str).map(mapping).fillna(-1).astype("int16")
+
+        chunk_df = chunk_df.copy()
+
+        if chunk_idx < 5:
+            if "isFraud" not in chunk_df.columns:
+                continue
+            X_train = chunk_df.drop(columns=["isFraud", "TransactionID"], errors="ignore")
+            y_train = chunk_df["isFraud"]
+
+            lgb_clf = lgb.LGBMClassifier(
+                n_estimators=50,
+                learning_rate=0.03,
+                num_leaves=31,
+                random_state=42,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                n_jobs=-1,
+            )
+            lgb_clf.fit(X_train, y_train, init_model=lgb_booster)
+            lgb_booster = lgb_clf.booster_
+            logger.info(f"Chunk {chunk_idx + 1} trained incrementally!")
+
+            del chunk_df, X_train, y_train, lgb_clf, new_cols
+            gc.collect()
+        else:
+            logger.info("Chunk 6 held out strictly for Clean Validation.")
+            val_chunk_df = chunk_df.copy()
+            del chunk_df, new_cols
+            gc.collect()
+            break
+
+    if lgb_booster is None:
+        raise ValueError("No valid training chunks processed.")
+
+    model_path = os.path.join(model_dir, "lgb_model.txt")
+    lgb_booster.save_model(model_path)
+    logger.info(f"Incremental model successfully saved to {model_path}")
+
+    if val_chunk_df is not None and "isFraud" in val_chunk_df.columns:
+        logger.info("--- Evaluating LightGBM on Strictly Clean Validation Set ---")
+        X_val = val_chunk_df.drop(columns=["isFraud", "TransactionID"], errors="ignore")
+        y_val = val_chunk_df["isFraud"]
+        val_preds = lgb_booster.predict(X_val)
+        val_auc = roc_auc_score(y_val, val_preds)
+        logger.info(f"Clean Validation ROC-AUC Score: {val_auc:.5f}")
+
+    return lgb_booster
 
 if __name__ == "__main__":
-    print("Starting training pipeline...")
-    trainer = IncrementalTrainer()
-    if os.path.exists("data/raw"):
-        trainer.train_pipeline(data_dir="data/raw")
-        print("Training pipeline finished successfully!")
-    else:
-        print("Error: data/raw directory not found!")
+    run_training_pipeline()
