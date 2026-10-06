@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing FastAPI service & loading model artifacts...")
 
     model_path = "models/lgb_model.txt"
-    stats_path = "data/processed/global_stats.json"
+    processed_dir = "data/processed"
 
     try:
         # Load LightGBM model
@@ -34,16 +34,36 @@ async def lifespan(app: FastAPI):
         else:
             logger.warning(f"Model file not found at {model_path}.")
 
-        # Initialize and load FeatureTransformer stats if available
-        transformer = FeatureTransformer()
-        if os.path.exists(stats_path):
-            with open(stats_path, "r") as f:
-                transformer.global_stats = json.load(f)
-            logger.info("Feature transformer stats loaded successfully.")
-        else:
-            logger.warning(f"Global stats file not found at {stats_path}. Running with base transformer.")
-            
+        # Load actual feature engineering artifacts produced by build_features.py
+        card1_mean_path = os.path.join(processed_dir, "card1_mean.json")
+        card1_std_path = os.path.join(processed_dir, "card1_std.json")
+        global_freq_path = os.path.join(processed_dir, "global_freq.json")
+        cat_mappings_path = os.path.join(processed_dir, "cat_mappings.json")
+
+        card1_mean, card1_std, global_freq, cat_mappings = {}, {}, {}, {}
+
+        if os.path.exists(card1_mean_path):
+            with open(card1_mean_path, "r") as f:
+                card1_mean = json.load(f)
+        if os.path.exists(card1_std_path):
+            with open(card1_std_path, "r") as f:
+                card1_std = json.load(f)
+        if os.path.exists(global_freq_path):
+            with open(global_freq_path, "r") as f:
+                global_freq = json.load(f)
+        if os.path.exists(cat_mappings_path):
+            with open(cat_mappings_path, "r") as f:
+                cat_mappings = json.load(f)
+
+        # Initialize FeatureTransformer with actual artifacts
+        transformer = FeatureTransformer(
+            card1_mean=card1_mean,
+            card1_std=card1_std,
+            global_freq=global_freq,
+            cat_mappings=cat_mappings,
+        )
         model_container["transformer"] = transformer
+        logger.info("FeatureTransformer initialized with project artifacts successfully.")
 
     except Exception as e:
         logger.error(f"Failed to load model artifacts during startup: {str(e)}")
@@ -74,7 +94,7 @@ async def health_check():
 
 @app.post("/predict", response_model=PredictionOutput)
 async def predict(transaction: TransactionInput):
-    """Score an incoming transaction for fraud probability."""
+    """Score an incoming transaction for fraud probability with strict feature alignment."""
     if "model" not in model_container or "transformer" not in model_container:
         raise HTTPException(
             status_code=503,
@@ -91,10 +111,18 @@ async def predict(transaction: TransactionInput):
         # Apply transformation
         processed_data = transformer.transform(input_data)
         
-        # Predict probability
-        prob = float(model.predict(processed_data)[0])
+        # Strict feature alignment expected by LightGBM booster
+        required_features = model.feature_name()
+        for col in required_features:
+            if col not in processed_data.columns:
+                processed_data[col] = 0
+                
+        X = processed_data[required_features]
         
-        # Default threshold optimization value (0.3505)
+        # Predict probability
+        prob = float(model.predict(X)[0])
+        
+        # Optimized decision threshold
         is_fraud = prob >= 0.3505
         
         return {
