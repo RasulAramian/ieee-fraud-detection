@@ -76,8 +76,7 @@ data/
 ## 🛠️ Installation & Setup
 
 ### 1. Clone the Repository
-```bash
-git clone [https://github.com/RasulAramian/ieee-fraud-detection.git](https://github.com/RasulAramian/ieee-fraud-detection.git)
+```git clone https://github.com/RasulAramian/ieee-fraud-detection.git
 cd ieee-fraud-detection
 ```
 
@@ -88,8 +87,7 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
 ### 3. Install Dependencies
-```bash
-pip install -r requirements.txt
+```bashpip install -r requirements.txt
 ```
 
 ## 🧪 Running Tests

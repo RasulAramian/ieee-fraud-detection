@@ -3,18 +3,17 @@ import pytest
 
 from api.main import app
 
-client = TestClient(app)
-
 
 def test_health_endpoint():
     """Test the API health check response."""
-    response = client.get("/health")
-    assert response.status_code == 200
-    assert "status" in response.json()
+    with TestClient(app) as client:
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert "status" in response.json()
 
 
-def test_predict_endpoint_structure():
-    """Test inference request schema validation."""
+def test_predict_endpoint_success():
+    """Test successful inference request and response structure."""
     payload = {
         "TransactionID": 2987000,
         "TransactionDT": 86400,
@@ -22,6 +21,11 @@ def test_predict_endpoint_structure():
         "ProductCD": "W",
         "card1": 13926,
     }
-    response = client.post("/predict", json=payload)
-    # Status code can be 200 or 503 if model file is not pre-loaded during tests
-    assert response.status_code in [200, 503]
+    with TestClient(app) as client:
+        response = client.post("/predict", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert "is_fraud" in data
+        assert "fraud_probability" in data
+        assert isinstance(data["is_fraud"], bool)
+        assert isinstance(data["fraud_probability"], float)

@@ -23,8 +23,14 @@ async def lifespan(app: FastAPI):
     """Lifespan event handler to pre-load model and metadata artifacts on service startup."""
     logger.info("Initializing FastAPI service & loading model artifacts...")
 
-    model_path = "models/lgb_model.txt"
-    processed_dir = "data/processed"
+    # Use absolute paths based on the project root directory
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    print("DEBUG BASE_DIR:", BASE_DIR)
+    
+    model_path = os.path.join(BASE_DIR, "models", "lgb_model.txt")
+    processed_dir = os.path.join(BASE_DIR, "data", "processed")
+    print("DEBUG model path:", model_path)
+    print("DEBUG model exists:", os.path.exists(model_path))
 
     try:
         # Load LightGBM model
@@ -67,6 +73,7 @@ async def lifespan(app: FastAPI):
 
     except Exception as e:
         logger.error(f"Failed to load model artifacts during startup: {str(e)}")
+        print("DEBUG EXCEPTION DURING LOAD:", str(e))
 
     yield
     model_container.clear()
