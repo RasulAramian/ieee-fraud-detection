@@ -1,10 +1,12 @@
 import os
 import gc
 import logging
+import pickle
 import pandas as pd
 import numpy as np
 import lightgbm as lgb
 from sklearn.metrics import roc_auc_score
+from src.features.features import FeatureTransformer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -90,6 +92,19 @@ def run_training_pipeline(data_dir: str = "data/raw", model_dir: str = "models",
     del cat_uniques
     gc.collect()
 
+    # Instantiate and save the FeatureTransformer artifact
+    transformer = FeatureTransformer(
+        card1_mean=card1_global_mean,
+        card1_std=card1_global_std,
+        global_freq=global_freq,
+        cat_mappings=cat_mappings,
+    )
+
+    artifacts_path = os.path.join(model_dir, "artifacts.pkl")
+    with open(artifacts_path, "wb") as f:
+        pickle.dump(transformer, f)
+    logger.info(f"FeatureTransformer artifacts successfully saved to {artifacts_path}")
+
     logger.info("PASS 1 Completed Successfully!")
     logger.info("==========================================")
     logger.info("PASS 2: Feature Engineering & Incremental LGBM Training...")
@@ -108,29 +123,8 @@ def run_training_pipeline(data_dir: str = "data/raw", model_dir: str = "models",
             
         chunk_df = reduce_mem_usage(chunk_df)
 
-        new_cols = {}
-        if "TransactionDT" in chunk_df.columns:
-            new_cols["hour"] = (chunk_df["TransactionDT"] // 3600) % 24
-            new_cols["day_cycle"] = (chunk_df["TransactionDT"] // (3600 * 24)) % 7
-
-        if "card1" in chunk_df.columns and "TransactionAmt" in chunk_df.columns:
-            card1_mean = chunk_df["card1"].map(card1_global_mean)
-            card1_std = chunk_df["card1"].map(card1_global_std)
-            new_cols["TransactionAmt_zscore_card1"] = (chunk_df["TransactionAmt"] - card1_mean) / (card1_std + 1e-5)
-            new_cols["TransactionAmt_to_mean_card1"] = chunk_df["TransactionAmt"] / (card1_mean + 1e-5)
-            new_cols["TransactionAmt_diff_mean_card1"] = chunk_df["TransactionAmt"] - card1_mean
-
-        for col in freq_cols:
-            if col in chunk_df.columns:
-                new_cols[f"{col}_fq_enc"] = chunk_df[col].map(pd.Series(global_freq[col])).fillna(0)
-
-        chunk_df = chunk_df.assign(**new_cols)
-
-        for col, mapping in cat_mappings.items():
-            if col in chunk_df.columns:
-                chunk_df[col] = chunk_df[col].astype(str).map(mapping).fillna(-1).astype("int16")
-
-        chunk_df = chunk_df.copy()
+        # Use unified FeatureTransformer instead of duplicated manual logic
+        chunk_df = transformer.transform(chunk_df)
 
         if chunk_idx < 5:
             if "isFraud" not in chunk_df.columns:
@@ -151,12 +145,12 @@ def run_training_pipeline(data_dir: str = "data/raw", model_dir: str = "models",
             lgb_booster = lgb_clf.booster_
             logger.info(f"Chunk {chunk_idx + 1} trained incrementally!")
 
-            del chunk_df, X_train, y_train, lgb_clf, new_cols
+            del chunk_df, X_train, y_train, lgb_clf
             gc.collect()
         else:
             logger.info("Chunk 6 held out strictly for Clean Validation.")
             val_chunk_df = chunk_df.copy()
-            del chunk_df, new_cols
+            del chunk_df
             gc.collect()
             break
 

@@ -5,7 +5,6 @@ from src.utils.memory import reduce_mem_usage
 
 class FeatureTransformer:
     """Applies time-based derivations, aggregated Z-scores, frequency encodings,
-
     and label encodings to incoming transaction chunks.
     """
 
@@ -16,10 +15,17 @@ class FeatureTransformer:
         global_freq: Dict[str, Dict[Any, int]],
         cat_mappings: Dict[str, Dict[str, int]],
     ) -> None:
-        self.card1_mean = card1_mean
-        self.card1_std = card1_std
-        self.global_freq = global_freq
-        self.cat_mappings = cat_mappings
+        # Convert dictionary keys to standard types to prevent float16 index errors in Pandas
+        self.card1_mean = {k: v for k, v in card1_mean.items()}
+        self.card1_std = {k: v for k, v in card1_std.items()}
+        self.global_freq = {
+            col: {str(k): v for k, v in f_dict.items()} 
+            for col, f_dict in global_freq.items()
+        }
+        self.cat_mappings = {
+            col: {str(k): v for k, v in mapping.items()} 
+            for col, mapping in cat_mappings.items()
+        }
 
     def transform(self, chunk_df: pd.DataFrame) -> pd.DataFrame:
         """Transforms a single DataFrame chunk using precomputed mappings."""
@@ -30,9 +36,10 @@ class FeatureTransformer:
         new_cols["hour"] = (df["TransactionDT"] // 3600) % 24
         new_cols["day_cycle"] = (df["TransactionDT"] // (3600 * 24)) % 7
 
-        # 2. Card1 Mean & Deviation Metrics
-        c1_m = df["card1"].map(self.card1_mean)
-        c1_s = df["card1"].map(self.card1_std)
+        # 2. Card1 Mean & Deviation Metrics (map using string or robust conversion if needed)
+        card1_series = df["card1"].astype(str)
+        c1_m = card1_series.map(self.card1_mean)
+        c1_s = card1_series.map(self.card1_std)
 
         new_cols["TransactionAmt_zscore_card1"] = (
             df["TransactionAmt"] - c1_m
@@ -46,7 +53,7 @@ class FeatureTransformer:
         for col, freq_dict in self.global_freq.items():
             if col in df.columns:
                 new_cols[f"{col}_fq_enc"] = (
-                    df[col].map(pd.Series(freq_dict)).fillna(0)
+                    df[col].astype(str).map(freq_dict).fillna(0)
                 )
 
         df = df.assign(**new_cols)
