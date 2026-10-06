@@ -13,14 +13,33 @@ A modular, production-ready machine learning pipeline and REST API for the **IEE
 
 ## 📁 Project Structure
 
+```text
 ieee-fraud-detection/
-├── api/ (main.py, schemas.py)
-├── src/ (data/, features/, models/, utils/)
-├── tests/ (test_api.py, test_features.py)
-├── Dockerfile
-├── requirements.txt
-└── README.md
-
+├── api/
+│   ├── main.py            # FastAPI application & endpoints (/health, /predict)
+│   └── schemas.py         # Pydantic validation schemas
+├── src/
+│   ├── data/
+│   │   └── loader.py      # Chunked data loading utilities
+│   ├── features/
+│   │   ├── build_features.py  # Pass 1: Statistical aggregations
+│   │   └── features.py        # Pass 2: Feature transformation pipeline
+│   ├── models/
+│   │   ├── train.py       # LightGBM / XGBoost training script
+│   │   └── predict.py     # Chunked batch inference script
+│   └── utils/
+│       ├── logger.py      # Centralized logging utilities
+│       └── memory.py      # Memory optimization utilities
+├── tests/
+│   ├── test_api.py        # Unit tests for FastAPI endpoints
+│   ├── test_data.py       # Unit tests for data loading logic
+│   └── test_features.py   # Unit tests for feature engineering logic
+├── notebooks/             # Exploratory data analysis & baseline notebooks
+├── Dockerfile             # Container definition
+├── requirements.txt       # Production dependencies
+├── requirements-dev.txt   # Development dependencies
+└── README.md              # Project documentation
+```
 ## 🛠 Installation & Setup
 
 ### 1. Clone the Repository
