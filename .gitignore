@@ -1,0 +1,31 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data & Models (Do not commit large datasets or weights)
+data/
+models/*.pkl
+models/*.joblib
+models/*.onnx
+
+# Virtual Environments
+venv/
+.venv/
+env/
+
+# IDE / Editors
+.vscode/
+.idea/
+
+# Environment Variables
+.env
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+mlruns/

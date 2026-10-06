@@ -1,0 +1,32 @@
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python cache & compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Development requirements & CI/CD configs
+requirements-dev.txt
+.github/
+
+# Ignore raw data directory and raw dataset extensions
+data/raw/
+*.csv
+*.parquet
+*.ftr
+*.feather
+*.zip
+*.tar.gz
+
+# Notebooks & EDA
+notebooks/
+
+# Git, logs, & local configs
+.git/
+.gitignore
+.env
