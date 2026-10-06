@@ -9,7 +9,7 @@ A modular, production-ready machine learning pipeline and REST API for the **IEE
 - **Production Modeling**: Built around a high-performance **LightGBM** engine trained on validated temporal splits (with XGBoost explored during experimentation).
 - **FastAPI Inference Service**: Real-time transaction scoring via a high-performance REST API with strict Pydantic request/response validation.
 - **Dockerized Environment**: Fully containerized setup (Python 3.12-slim) with optimized layers and security guardrails (.dockerignore protecting raw data leakage while preserving inference metadata).
-- **Comprehensive Unit Testing**: Rigorous test suites covering feature logic and API endpoints using pytest.
+- **Automated Testing**: Pytest-based test suites covering API endpoints and core pipeline components.
 
 ## 📁 Project Structure
 
@@ -32,7 +32,6 @@ ieee-fraud-detection/
 │       └── memory.py      # Memory optimization utilities
 ├── tests/
 │   ├── test_api.py        # Unit tests for FastAPI endpoints
-│   ├── test_data.py       # Unit tests for data loading logic
 │   └── test_features.py   # Unit tests for feature engineering logic
 ├── notebooks/             # Exploratory data analysis & baseline notebooks
 ├── Dockerfile             # Container definition
@@ -57,7 +56,7 @@ The out-of-core training pipeline was evaluated on the IEEE-CIS competition spli
 
 ## ⚙️ Production Model
 
-- **Inference Engine**: LightGBM ().
+- **Inference Engine**: LightGBM.
 - **Execution Strategy**: Trained via an out-of-core incremental strategy to prevent memory overflow.
 - **Artifact Alignment**: The FastAPI service loads the model alongside feature-engineering schema artifacts to precisely reproduce training-time transformations during inference.
 
