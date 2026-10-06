@@ -12,7 +12,7 @@ logger = get_logger("build_features")
 class FeatureStatsBuilder:
     """Pass 1: Extracts global statistics, categorical mappings, and frequency distributions
 
-    incrementally to prevent data leakage during out-of-core pipeline execution.
+    incrementally from the initial training chunks to prevent data leakage during out-of-core pipeline execution.
     """
 
     def __init__(
@@ -20,6 +20,7 @@ class FeatureStatsBuilder:
         freq_cols: List[str] = None,
         cat_cols: List[str] = None,
         output_dir: str = "data/processed",
+        max_chunks: int = 5,
     ) -> None:
         self.freq_cols = freq_cols or [
             "card1",
@@ -48,13 +49,14 @@ class FeatureStatsBuilder:
             "M9",
         ]
         self.output_dir = output_dir
+        self.max_chunks = max_chunks
         os.makedirs(self.output_dir, exist_ok=True)
 
     def fit(
         self, loader: ChunkedDataLoader
     ) -> Tuple[Dict[str, float], Dict[str, float], Dict[str, Dict[Any, int]], Dict[str, Dict[str, int]]]:
-        """Iterates over training chunks to extract global continuous and categorical stats."""
-        logger.info("Starting Pass 1: Global statistics and mappings extraction...")
+        """Iterates strictly over the specified training chunks to extract global continuous and categorical stats."""
+        logger.info(f"Starting Pass 1: Global statistics and mappings extraction (Chunks 0 to {self.max_chunks - 1})...")
 
         card1_sum: Dict[float, float] = {}
         card1_sq_sum: Dict[float, float] = {}
@@ -65,9 +67,11 @@ class FeatureStatsBuilder:
         }
         cat_values: Dict[str, set] = {col: set() for col in self.cat_cols}
 
-        for chunk in loader.stream_transactions(
-            split="train"
-        ):
+        for chunk_idx, chunk in enumerate(loader.stream_transactions(split="train")):
+            if chunk_idx >= self.max_chunks:
+                logger.info(f"Reached max chunks limit ({self.max_chunks}). Stopping Pass 1 fit to prevent data leakage.")
+                break
+
             # Accumulate sum & sum of squares for card1
             valid_card1 = chunk[["card1", "TransactionAmt"]].dropna()
             for c1, amt in zip(
