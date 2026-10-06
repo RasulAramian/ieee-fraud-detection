@@ -66,7 +66,7 @@ class FeatureStatsBuilder:
         cat_values: Dict[str, set] = {col: set() for col in self.cat_cols}
 
         for chunk in loader.stream_transactions(
-            split="train", merge_identity=True
+            split="train"
         ):
             # Accumulate sum & sum of squares for card1
             valid_card1 = chunk[["card1", "TransactionAmt"]].dropna()
