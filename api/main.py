@@ -118,13 +118,17 @@ async def predict(transaction: TransactionInput):
         # Apply transformation
         processed_data = transformer.transform(input_data)
         
-        # Strict feature alignment expected by LightGBM booster
+        # Strict feature alignment and categorical mapping expected by LightGBM booster
         required_features = model.feature_name()
         for col in required_features:
             if col not in processed_data.columns:
                 processed_data[col] = 0
                 
-        X = processed_data[required_features]
+        X = processed_data[required_features].copy()
+        
+        # Convert all object/string types to category cleanly without raising mismatch
+        for col in X.select_dtypes(include=["object", "string"]).columns:
+            X[col] = X[col].astype("category")
         
         # Predict probability
         prob = float(model.predict(X)[0])
