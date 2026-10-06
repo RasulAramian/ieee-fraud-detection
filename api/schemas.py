@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Optional
 from pydantic import BaseModel, Field
 
 
@@ -27,9 +27,3 @@ class PredictionOutput(BaseModel):
     TransactionID: int
     fraud_probability: float
     is_fraud: bool
-
-
-class BatchTransactionInput(BaseModel):
-    """Schema for batch inference requests."""
-
-    transactions: List[TransactionInput]
