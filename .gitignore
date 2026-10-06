@@ -4,7 +4,7 @@ __pycache__/
 *$py.class
 
 # Data & Models (Do not commit large datasets or weights)
-data/
+data/raw/
 models/
 notebooks/*.pkl
 notebooks/*.csv
