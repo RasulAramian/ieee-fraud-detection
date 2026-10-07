@@ -1,115 +1,216 @@
-# IEEE-CIS Fraud Detection - Production Pipeline
-
-A modular, production-ready machine learning pipeline and REST API for the **IEEE-CIS Fraud Detection** competition dataset. Designed with clean software engineering practices, memory-efficient out-of-core processing, and robust deployment guardrails.
-
-## 🚀 Key Features
-
-- **Out-of-Core Processing**: A memory-optimized 3-pass pipeline capable of handling large-scale tabular datasets without RAM overflow.
-- **Robust Feature Engineering**: Automated statistical aggregations and transformations (src/features/).
-- **Production Modeling**: Built around a high-performance **LightGBM** engine trained on validated temporal splits (with XGBoost explored during experimentation).
-- **FastAPI Inference Service**: Real-time transaction scoring via a high-performance REST API with strict Pydantic request/response validation.
-- **Dockerized Environment**: Fully containerized setup (Python 3.12-slim) with optimized layers and security guardrails (.dockerignore protecting raw data leakage while preserving inference metadata).
-- **Automated Testing**: Pytest-based test suites covering API endpoints and core pipeline components.
-
-## 📁 Project Structure
-
-```text
-ieee-fraud-detection/
-├── api/
-│   ├── main.py            # FastAPI application & endpoints (/health, /predict)
-│   └── schemas.py         # Pydantic validation schemas
-├── src/
-│   ├── data/
-│   │   └── loader.py      # Chunked data loading utilities
-│   ├── features/
-│   │   ├── build_features.py  # Pass 1: Statistical aggregations
-│   │   └── features.py        # Pass 2: Feature transformation pipeline
-│   ├── models/
-│   │   ├── train.py       # LightGBM training script
-│   │   └── predict.py     # Chunked batch inference script
-│   └── utils/
-│       ├── logger.py      # Centralized logging utilities
-│       └── memory.py      # Memory optimization utilities
-├── tests/
-│   ├── test_api.py        # Unit tests for FastAPI endpoints
-│   └── test_features.py   # Unit tests for feature engineering logic
-├── notebooks/             # Exploratory data analysis & baseline notebooks
-├── Dockerfile             # Container definition
-├── requirements.txt       # Production dependencies
-├── requirements-dev.txt   # Development dependencies
-└── README.md              # Project documentation
-```
-
-## 📊 Model Performance & Results
-
-The out-of-core training pipeline was evaluated on the IEEE-CIS competition splits, achieving competitive performance against standard full-memory approaches while maintaining a strict memory footprint.
-
-### Leaderboard & Validation Summary
-| Pipeline Iteration | Public AUC | Private AUC | Key Highlights |
-| :--- | :---: | :---: | :--- |
-| **Initial LightGBM Baseline** | 0.9080 | 0.8853 | Basic feature encoding |
-| **Feature-Engineered Baseline** | 0.9116 | 0.8889 | Added frequency encodings & time features |
-| **Out-of-Core Incremental Baseline** | **0.9144** | **0.8906** | 2-Pass Chunked LGBM + Full Feature Alignment |
-
-- **Validation Strategy**: A strict time-aware hold-out split was used rather than a random split. Fraud patterns evolve over time, so evaluating on a later time window provides a realistic estimate of generalization to future transactions (achieving **0.9003 ROC-AUC**).
-- **Decision Threshold**: The default classification threshold of 0.5 was optimized to **0.3505** based on validation-set F1 performance, reflecting the highly imbalanced, asymmetric nature of fraud detection.
-
-## ⚙️ Production Model
-
-- **Inference Engine**: LightGBM.
-- **Execution Strategy**: Trained via an out-of-core incremental strategy to prevent memory overflow.
-- **Artifact Alignment**: The FastAPI service loads the model alongside feature-engineering schema artifacts to precisely reproduce training-time transformations during inference.
-
-## 📂 Dataset Setup
-
-To run the pipeline locally, download the IEEE-CIS Fraud Detection dataset from Kaggle and place the raw CSV files into the `data/raw/` directory with the following structure:
-
-```text
-data/
-└── raw/
-    ├── train_transaction.csv
-    ├── train_identity.csv
-    ├── test_transaction.csv
-    └── test_identity.csv
-```
-
-## 🛠️ Installation & Setup
-
-### 1. Clone the Repository
-```git clone https://github.com/RasulAramian/ieee-fraud-detection.git
-cd ieee-fraud-detection
-```
-
-### 2. Create and Activate Virtual Environment
-```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-### 3. Install Dependencies
-```bashpip install -r requirements.txt
-```
-
-## 🧪 Running Tests
-
-To verify the integrity of the feature engineering logic and API routing, run pytest:
-```bash
-pytest tests/
-```
-
-## 🐳 Docker Deployment & Security
-
-### Build the Docker Image
-```bash
-docker build -t ieee-fraud-detection:v1 .
-```
-
-### Run the Container
-```bash
-docker run -d --name fraud_app -p 8000:8000 ieee-fraud-detection:v1
-```
-
-- **Security Considerations**: Raw training data (`data/raw/`) is strictly excluded from the Docker build context via `.dockerignore` to keep large datasets and sensitive artifacts out of container images.
-
-## 👨‍💻 Author
-**Rasul Aramian**
+printf '%s\n' \
+"# IEEE-CIS Fraud Detection" \
+"" \
+"A production-oriented machine learning pipeline and REST API for detecting fraudulent transactions using the IEEE-CIS Fraud Detection dataset. The project covers the complete ML lifecycle: Raw Data -> Feature Engineering -> Time-Aware Validation -> Incremental Training -> Model Persistence -> FastAPI -> Docker -> Render." \
+"" \
+"---" \
+"" \
+"## Architecture" \
+"" \
+"\`\`\`text" \
+"                        IEEE-CIS Dataset" \
+"                               │" \
+"                               ▼" \
+"                    Chunked Data Loading" \
+"                               │" \
+"                               ▼" \
+"                      Feature Engineering" \
+"                               │" \
+"                               ▼" \
+"                     Time-Aware Validation" \
+"                               │" \
+"                               ▼" \
+"                    Incremental LightGBM" \
+"                               │" \
+"                               ▼" \
+"                   Model + Feature Artifacts" \
+"                               │" \
+"                ┌──────────────┴──────────────┐" \
+"                ▼                             ▼" \
+"         Batch Prediction                  FastAPI" \
+"                                              │" \
+"                                              ▼" \
+"                                           Docker" \
+"                                              │" \
+"                                              ▼" \
+"                                            Render" \
+"\`\`\`" \
+"" \
+"---" \
+"" \
+"## Key Features" \
+"" \
+"- **Memory-Efficient Data Processing**: Transaction data is processed in chunks using \`pandas\` to prevent RAM exhaustion on large tabular data." \
+"- **Time-Aware Validation**: Uses a strict temporal split to simulate real-world production settings and prevent data leakage." \
+"- **Consistent Feature Transformation**: Centralizes feature engineering inside \`FeatureTransformer\` to eliminate train-serve skew." \
+"- **Incremental LightGBM Training**: Trains models across chunks using LightGBM's continued boosting capability (\`init_model\`)." \
+"- **Optimized Classification Threshold**: Tunes the decision threshold using validation F1-score rather than defaulting to 0.5." \
+"- **REST API**: Provides real-time transaction scoring via FastAPI and Pydantic validation." \
+"- **Containerized Deployment**: Packaged with Docker and deployed as a live web service on Render." \
+"- **Automated Testing**: Verified using \`pytest\` for API health, endpoints, and transformation logic." \
+"" \
+"---" \
+"" \
+"## Tech Stack" \
+"" \
+"- **Core**: Python 3.12, Pandas, NumPy" \
+"- **Machine Learning**: LightGBM, Scikit-Learn" \
+"- **API & Validation**: FastAPI, Pydantic, Uvicorn" \
+"- **DevOps & Deployment**: Docker, Render, Git/GitHub" \
+"- **Testing**: Pytest" \
+"" \
+"---" \
+"" \
+"## Memory-Efficient Processing" \
+"" \
+"The IEEE-CIS dataset creates significant memory pressure when loaded entirely into RAM. Instead of processing the complete transaction table at once, the pipeline uses chunked loading:" \
+"" \
+"\`\`\`python" \
+"for chunk in pd.read_csv(\"train_transaction.csv\", chunksize=chunk_size):" \
+"    # Process and transform chunk iteratively" \
+"\`\`\`" \
+"" \
+"This approach allows feature engineering, training, and inference to operate efficiently under constrained resources." \
+"" \
+"---" \
+"" \
+"## Model Performance" \
+"" \
+"### Kaggle Competition Results" \
+"The following scores were obtained from separate competition submissions during model iteration:" \
+"" \
+"| Pipeline Iteration | Public AUC | Private AUC |" \
+"| :--- | :---: | :---: |" \
+"| Initial LightGBM Baseline | 0.9080 | 0.8853 |" \
+"| Feature-Engineered Baseline | 0.9116 | 0.8889 |" \
+"| Out-of-Core Incremental Baseline | **0.9144** | **0.8906** |" \
+"" \
+"### Local Validation" \
+"A time-aware hold-out validation strategy was implemented, achieving a local validation **ROC-AUC of 0.9003**." \
+"" \
+"### Classification Threshold" \
+"Because fraud detection is highly imbalanced, the default 0.5 decision threshold was optimized on the validation set, resulting in an optimal threshold of **0.3505**." \
+"" \
+"---" \
+"" \
+"## API Usage" \
+"" \
+"### Start the Service Locally" \
+"\`\`\`bash" \
+"uvicorn api.main:app --host 0.0.0.0 --port 8000" \
+"\`\`\`" \
+"" \
+"### Health Check" \
+"\`\`\`bash" \
+"curl http://localhost:8000/health" \
+"\`\`\`" \
+"Response:" \
+"\`\`\`json" \
+"{" \
+"  \"status\": \"healthy\"," \
+"  \"model_loaded\": true" \
+"}" \
+"\`\`\`" \
+"" \
+"### Prediction Endpoint (\`POST /predict\`)" \
+"Send a JSON payload containing transaction attributes to receive a fraud probability and classification decision." \
+"" \
+"---" \
+"" \
+"## Deployment" \
+"" \
+"The FastAPI inference service is containerized with Docker and deployed as a live web service on Render:" \
+"" \
+"- **Live Service URL**: \`https://ieee-fraud-detection-dsjf.onrender.com\`" \
+"- **Endpoints**:" \
+"  - \`GET /health\`: Service health and model artifact status." \
+"  - \`POST /predict\`: Real-time transaction scoring." \
+"" \
+"---" \
+"" \
+"## Docker" \
+"" \
+"The Docker image is built using a lightweight Python base image:" \
+"- Base image: \`python:3.12-slim\`" \
+"- Excludes raw training datasets via \`.dockerignore\`" \
+"- Installs necessary system dependencies (e.g., \`libgomp1\` for LightGBM)" \
+"" \
+"---" \
+"" \
+"## Testing" \
+"" \
+"Run the test suite using \`pytest\`:" \
+"\`\`\`bash" \
+"pytest tests/" \
+"\`\`\`" \
+"" \
+"The test suite covers API health checks, prediction behavior, response validation, and feature transformation logic." \
+"" \
+"---" \
+"" \
+"## Installation & Setup" \
+"" \
+"1. **Clone the repository**:" \
+"   \`\`\`bash" \
+"   git clone https://github.com/RasulAramian/ieee-fraud-detection.git" \
+"   cd ieee-fraud-detection" \
+"   \`\`\`" \
+"" \
+"2. **Create and activate a virtual environment**:" \
+"   \`\`\`bash" \
+"   python -m venv .venv" \
+"   source .venv/bin/activate" \
+"   \`\`\`" \
+"" \
+"3. **Install dependencies**:" \
+"   \`\`\`bash" \
+"   pip install -r requirements.txt" \
+"   \`\`\`" \
+"" \
+"### Dataset" \
+"The IEEE-CIS Fraud Detection dataset is available through Kaggle. Place the downloaded CSV files under:" \
+"\`\`\`text" \
+"data/" \
+"└── raw/" \
+"    ├── train_transaction.csv" \
+"    ├── train_identity.csv" \
+"    ├── test_transaction.csv" \
+"    └── test_identity.csv" \
+"\`\`\`" \
+"Note that the raw dataset is excluded from version control via \`.dockerignore\` and \`.gitignore\`." \
+"" \
+"---" \
+"" \
+"## Project Structure" \
+"" \
+"\`\`\`text" \
+"ieee-fraud-detection/" \
+"├── api/" \
+"│   ├── __init__.py" \
+"│   ├── main.py" \
+"│   └── schemas.py" \
+"├── data/" \
+"├── models/" \
+"│   ├── artifacts.pkl" \
+"│   └── lgb_model.txt" \
+"├── notebooks/" \
+"├── src/" \
+"│   ├── data/" \
+"│   ├── features/" \
+"│   ├── models/" \
+"│   └── utils/" \
+"├── tests/" \
+"│   ├── test_api.py" \
+"│   └── test_features.py" \
+"├── Dockerfile" \
+"├── pyproject.toml" \
+"├── requirements.txt" \
+"└── README.md" \
+"\`\`\`" \
+"" \
+"---" \
+"" \
+"## Author" \
+"" \
+"**Rasul Aramian**" \
+> README.md
