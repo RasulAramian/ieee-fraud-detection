@@ -15,9 +15,9 @@ class FeatureTransformer:
         global_freq: Dict[str, Dict[Any, int]],
         cat_mappings: Dict[str, Dict[str, int]],
     ) -> None:
-        # Convert dictionary keys to standard types to prevent float16 index errors in Pandas
-        self.card1_mean = {k: v for k, v in card1_mean.items()}
-        self.card1_std = {k: v for k, v in card1_std.items()}
+        # Convert dictionary keys to string types to prevent mapping mismatches with .astype(str)
+        self.card1_mean = {str(k): v for k, v in card1_mean.items()}
+        self.card1_std = {str(k): v for k, v in card1_std.items()}
         self.global_freq = {
             col: {str(k): v for k, v in f_dict.items()} 
             for col, f_dict in global_freq.items()
