@@ -1,5 +1,6 @@
 import json
 import os
+import pickle
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 import lightgbm as lgb
@@ -23,57 +24,40 @@ async def lifespan(app: FastAPI):
     """Lifespan event handler to pre-load model and metadata artifacts on service startup."""
     logger.info("Initializing FastAPI service & loading model artifacts...")
 
-    # Use absolute paths based on the project root directory
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    print("DEBUG BASE_DIR:", BASE_DIR)
     
     model_path = os.path.join(BASE_DIR, "models", "lgb_model.txt")
-    processed_dir = os.path.join(BASE_DIR, "data", "processed")
-    print("DEBUG model path:", model_path)
-    print("DEBUG model exists:", os.path.exists(model_path))
+    artifacts_path = os.path.join(BASE_DIR, "models", "artifacts.pkl")
 
     try:
-        # Load LightGBM model
+        # Load LightGBM model booster
         if os.path.exists(model_path):
             model_container["model"] = lgb.Booster(model_file=model_path)
             logger.info("LightGBM model loaded successfully.")
         else:
             logger.warning(f"Model file not found at {model_path}.")
 
-        # Load actual feature engineering artifacts produced by build_features.py
-        card1_mean_path = os.path.join(processed_dir, "card1_mean.json")
-        card1_std_path = os.path.join(processed_dir, "card1_std.json")
-        global_freq_path = os.path.join(processed_dir, "global_freq.json")
-        cat_mappings_path = os.path.join(processed_dir, "cat_mappings.json")
-
-        card1_mean, card1_std, global_freq, cat_mappings = {}, {}, {}, {}
-
-        if os.path.exists(card1_mean_path):
-            with open(card1_mean_path, "r") as f:
-                card1_mean = json.load(f)
-        if os.path.exists(card1_std_path):
-            with open(card1_std_path, "r") as f:
-                card1_std = json.load(f)
-        if os.path.exists(global_freq_path):
-            with open(global_freq_path, "r") as f:
-                global_freq = json.load(f)
-        if os.path.exists(cat_mappings_path):
-            with open(cat_mappings_path, "r") as f:
-                cat_mappings = json.load(f)
-
-        # Initialize FeatureTransformer with actual artifacts
-        transformer = FeatureTransformer(
-            card1_mean=card1_mean,
-            card1_std=card1_std,
-            global_freq=global_freq,
-            cat_mappings=cat_mappings,
-        )
-        model_container["transformer"] = transformer
-        logger.info("FeatureTransformer initialized with project artifacts successfully.")
+        # Load feature engineering artifacts consistently from artifacts.pkl
+        if os.path.exists(artifacts_path):
+            with open(artifacts_path, "rb") as f:
+                artifacts = pickle.load(f)
+            
+            if isinstance(artifacts, FeatureTransformer):
+                transformer = artifacts
+            else:
+                transformer = FeatureTransformer(
+                    card1_mean=artifacts.get("card1_mean", {}),
+                    card1_std=artifacts.get("card1_std", {}),
+                    global_freq=artifacts.get("global_freq", {}),
+                    cat_mappings=artifacts.get("cat_mappings", {}),
+                )
+            model_container["transformer"] = transformer
+            logger.info("FeatureTransformer initialized from artifacts.pkl successfully.")
+        else:
+            logger.warning(f"Artifacts file not found at {artifacts_path}.")
 
     except Exception as e:
         logger.error(f"Failed to load model artifacts during startup: {str(e)}")
-        print("DEBUG EXCEPTION DURING LOAD:", str(e))
 
     yield
     model_container.clear()
@@ -83,7 +67,7 @@ async def lifespan(app: FastAPI):
 # FastAPI application instance
 app = FastAPI(
     title="IEEE-CIS Fraud Detection API",
-    description="Production-ready inference service for credit card fraud detection",
+    description="Production-oriented inference service for credit card fraud detection",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -105,7 +89,7 @@ async def predict(transaction: TransactionInput):
     if "model" not in model_container or "transformer" not in model_container:
         raise HTTPException(
             status_code=503,
-            detail="Model artifacts not loaded. Service is in fallback state.",
+            detail="Model artifacts not found. Service is in fallback state.",
         )
     
     try:
