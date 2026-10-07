@@ -176,7 +176,7 @@ data/
     ├── test_transaction.csv
     └── test_identity.csv
 ```
-Note that the raw dataset is excluded from version control via `.dockerignore` and `.gitignore`.
+The raw dataset is excluded from Git version control via `.gitignore` and from the Docker build context via `.dockerignore`.
 
 ---
 
